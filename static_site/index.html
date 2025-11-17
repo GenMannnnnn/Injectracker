@@ -1,0 +1,890 @@
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>產品管理系統</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; margin:0; background:#fafafa; }
+    header { position: sticky; top:0; background:#fff; padding:12px; border-bottom:1px solid #eee; }
+    .wrap { padding:12px; }
+    input, select, button, textarea { font-size:16px; padding:10px; width:100%; box-sizing:border-box; margin:6px 0; }
+    .tabs { display:flex; gap:24px; align-items:center; }
+    .tab { flex:1; padding:12px; border:1px solid #e5e5e5; border-radius:999px; background:#fff; }
+    .tab.active { background:#111; color:#fff; }
+    .card { border:1px solid #eee; border-radius:12px; padding:12px; margin:10px 0; box-shadow:0 2px 6px rgba(0,0,0,0.05); background:#fff; }
+    .muted { color:#666; font-size:13px; }
+    .hide { display:none; }
+    label { font-size:13px; color:#444; }
+    .subtabs { display:flex; gap:8px; margin:8px 0; }
+    .subtab { padding:8px 12px; border:1px solid #ddd; border-radius:999px; background:#fafafa; }
+    .subtab.active { background:#111; color:#fff; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#111; color:#fff; margin-left:8px; }
+    .price-mask { display:inline-block; background:#000; color:transparent; border-radius:4px; padding:0 6px; user-select:none; }
+    .price-mask.revealed { background:transparent; color:inherit; }
+    .clickable { cursor:pointer; }
+    .row { display:flex; gap:8px; }
+    .row > button { flex:1; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+      <div style="font-weight:700;">產品管理系統 <span id="ver" class="badge">V1.1.0</span></div>
+      <div id="status" class="muted"></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" id="tab-products" onclick="switchTab('products')">產品資料</button>
+      <button class="tab" id="tab-vendors" onclick="switchTab('vendors')">廠商資料</button>
+      <button class="tab" id="tab-create" onclick="switchTab('create')">內容</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section id="view-products">
+    <div class="card">
+      <input id="q" placeholder="搜尋產品名稱" />
+      <button id="btn-search">搜尋</button>
+    </div>
+    <div id="product-list"></div>
+  </section>
+
+  <section id="view-vendors" class="hide">
+    <div class="card">
+      <input id="vq" placeholder="搜尋廠商名稱" />
+      <button id="btn-vsearch">搜尋</button>
+    </div>
+    <div id="vendor-list"></div>
+  </section>
+
+  <section id="view-create" class="hide">
+    <div class="subtabs">
+      <button class="subtab active" id="subtab-newproduct">新增產品</button>
+      <button class="subtab" id="subtab-newvendor">新增廠商</button>
+    </div>
+
+    <div id="sub-newproduct">
+      <input id="np-photo-camera" class="hide" type="file" accept="image/*" capture="environment" />
+      <input id="np-photo-gallery" class="hide" type="file" accept="image/*" />
+      <div class="row">
+        <button id="btn-photo-camera" type="button">📷 拍照</button>
+        <button id="btn-photo-gallery" type="button">🖼 相簿</button>
+      </div>
+      <div id="np-photo-name" class="muted"></div>
+      <label>產品名稱</label><input id="np-name" />
+      <label>產品編號</label><input id="np-productno" />
+      <label>廠商名稱</label><select id="np-vendor"><option value="">（可留空）</option></select>
+      <label>材質</label><input id="np-material" />
+      <label>料號</label><input id="np-sku" />
+      <label>顏色或色粉</label><input id="np-color" />
+      <label>成品重量(g)</label><input id="np-dye" />
+      <label>包裝方式</label><input id="np-packaging" />
+      <label>產品單價（可留空）</label><input id="np-price" type="number" step="0.01" />
+      <label>其他</label><textarea id="np-other"></textarea>
+      <button id="btn-create-product">新增</button>
+      <div id="np-status" class="muted"></div>
+    </div>
+
+    <div id="sub-newvendor" class="hide">
+      <label>廠商名稱</label><input id="nv-name" />
+      <label>聯絡地址</label><input id="nv-addr" />
+      <label>聯絡電話</label><input id="nv-phone" />
+      <label>聯絡人</label><input id="nv-contact" />
+      <label>傳真號碼</label><input id="nv-fax" />
+      <label>電子郵件</label><input id="nv-email" />
+      <label>其他</label><textarea id="nv-other"></textarea>
+      <button id="btn-create-vendor">新增廠商</button>
+      <div class="card" style="margin-top:10px">
+        <div class="muted">或匯入 Excel（必含「廠商名稱」欄）</div>
+        <input type="file" id="ve-file" accept=".xlsx,.xls" />
+        <button id="btn-import-vendor-excel">匯入 Excel</button>
+        <div id="ve-status" class="muted"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-vendor-detail" class="hide">
+    <div id="vendor-detail"></div>
+  </section>
+
+  <section id="view-product-detail" class="hide">
+    <div class="card"><button id="btn-back-products">← 返回產品選單</button></div>
+    <div id="product-detail"></div>
+  </section>
+
+  <section id="view-vendor-detail" class="hide">
+    <div class="card"><button id="btn-back-vendors">← 返回廠商資料</button></div>
+    <div id="vendor-detail"></div>
+  </section>
+</div>
+
+<script>
+let token=''; const API = location.origin;
+let selectedPhotoFile = null;
+let _productsReqSeq = 0;
+
+function $(id){return document.getElementById(id)}
+function switchTab(name){
+  ['products','vendors','create','product-detail','vendor-detail'].forEach(t=>{
+    const s=$('view-'+t), b=$('tab-'+t);
+    if(s){ s.classList.toggle('hide', t!==name); }
+    if(b){ b.classList.toggle('active', t===name); }
+  });
+  if(name==='products'){ searchProducts(); }
+  if(name==='vendors'){ loadVendors(); }
+  if(name==='create'){ preloadVendors(); }
+}
+function switchSub(name){
+  ['newproduct','newvendor'].forEach(s=>{
+    const el=$('sub-'+s), tb=$('subtab-'+s);
+    if(el) el.classList.toggle('hide', s!==name);
+    if(tb) tb.classList.toggle('active', s===name);
+  });
+}
+document.getElementById('subtab-newproduct').onclick=()=>switchSub('newproduct');
+document.getElementById('subtab-newvendor').onclick=()=>switchSub('newvendor');
+
+document.getElementById('btn-search').onclick=searchProducts;
+document.getElementById('btn-vsearch').onclick=loadVendors;
+document.getElementById('btn-create-product').onclick=createProduct;
+document.getElementById('btn-create-vendor').onclick=createVendor;
+document.getElementById('btn-import-vendor-excel').onclick=importVendorsExcel;
+
+document.getElementById('btn-photo-camera').onclick=()=>{$('np-photo-camera').click();};
+document.getElementById('btn-photo-gallery').onclick=()=>{$('np-photo-gallery').click();};
+$('np-photo-camera').onchange=()=>{ handlePhotoChange($('np-photo-camera')); };
+$('np-photo-gallery').onchange=()=>{ handlePhotoChange($('np-photo-gallery')); };
+
+window.updateListItemFromProduce = function(id, payload){
+  const qty  = (payload?.produced_last_qty ?? payload?.qty ?? 0);
+  const date = (payload?.produced_at || new Date().toISOString().slice(0,10));
+
+  const elQty  = document.querySelector(`#plq-${CSS.escape(String(id))}`);
+  const elDate = document.querySelector(`#pdat-${CSS.escape(String(id))}`);
+
+  if (elQty)  elQty.textContent  = qty;
+  if (elDate) elDate.textContent = date;
+};
+
+
+function handlePhotoChange(input){
+  if(input.files && input.files[0]){
+    selectedPhotoFile = input.files[0];
+    $('np-photo-name').textContent = '已選擇：' + selectedPhotoFile.name;
+    if(input.id==='np-photo-camera'){ $('np-photo-gallery').value=''; }
+    else { $('np-photo-camera').value=''; }
+  }
+}
+
+function updateListItemFromProduce(id, payload){
+  const qty  = (payload?.produced_last_qty ?? payload?.qty ?? 0);
+  const date = (payload?.produced_at || new Date().toISOString().slice(0,10));
+
+  // 用 CSS.escape 保險（雖然你的 id 是數字，但這樣更穩）
+  const elQty  = document.querySelector(`#plq-${CSS.escape(String(id))}`);
+  const elDate = document.querySelector(`#pdat-${CSS.escape(String(id))}`);
+
+  if (elQty)  elQty.textContent  = qty;
+  if (elDate) elDate.textContent = date;
+}
+
+/* ===== 廠商地區解析 + 排序工具（請放在 <script> 最上面） ===== */
+
+let vendorListLoadVersion = 0; // 防止舊請求覆蓋新結果
+
+// 統一「臺」→「台」
+function normalizeCity(s){ return (s || "").replace(/臺/g, "台"); }
+
+// 地址 → 城市 → 區域
+const REGION_MAP_TW = {
+  北部: ["台北市","新北市","基隆市","桃園市","新竹市","新竹縣","宜蘭縣"],
+  中部: ["苗栗縣","台中市","彰化縣","彰化市","南投縣","雲林縣"],
+  南部: ["嘉義市","嘉義縣","台南市","高雄市","屏東縣"],
+  東部: ["花蓮縣","台東縣"],
+  離島: ["澎湖縣","金門縣","連江縣"]
+};
+
+function findCityTW(addr=""){
+  addr = (addr || "").replace(/\s+/g,"");
+  for(const [region, cities] of Object.entries(REGION_MAP_TW)){
+    for(const c of cities){
+      if(addr.includes(c)) return { city: c, region };
+    }
+  }
+  return { city: "", region: "其他" };
+}
+function findCityTW(addr = "") {
+  // 去空白 + 把「臺」統一成「台」
+  let naddr = (addr || "").replace(/\s+/g, "").replace(/臺/g, "台");
+
+  for (const [region, cities] of Object.entries(REGION_MAP_TW)) {
+    for (const c of cities) {
+      const cNorm = c.replace(/臺/g, "台");
+      if (naddr.includes(cNorm)) {
+        return { city: cNorm, region };
+      }
+    }
+  }
+  return { city: "", region: "其他" };
+}
+
+// 區域內自訂城市順序（可自行調整）
+const CITY_ORDER_TW = {
+  北部: ["台北市","新北市","基隆市","桃園市","新竹市","新竹縣","宜蘭縣"],
+  中部: ["台中市","彰化縣","彰化市","南投縣","雲林縣","苗栗縣"], // ← 依你需求調整
+  南部: ["嘉義市","嘉義縣","台南市","高雄市","屏東縣"],  // ← 高雄在台南之後
+  東部: ["花蓮縣","台東縣"],
+  離島: ["澎湖縣","金門縣","連江縣"]
+};
+function cityOrderRank(region, city){
+  const arr = CITY_ORDER_TW[region] || [];
+  const idx = arr.indexOf(normalizeCity(city));
+  return idx === -1 ? 999 : idx;
+}
+
+function regionRankTW(r){
+  return {北部:0,中部:1,南部:2,東部:3,離島:4}[r] ?? 5;
+}
+
+// 依「區域→城市自訂順序→名稱」排序
+function sortVendorsTW(items){
+  const withRegion = items.map(v=>{
+    const {city, region} = findCityTW(v.address || "");
+    return {...v, _city: city, _region: region, _rank: regionRankTW(region)};
+  });
+
+  // 方便你在 console 驗證
+  console.log("📍 Vendor region parse result:",
+    withRegion.map(v=>({name:v.name, addr:v.address, city:v._city, region:v._region, rank:v._rank}))
+  );
+
+  withRegion.sort((a,b)=>{
+    if(a._rank !== b._rank) return a._rank - b._rank;                          // 區域順序
+    const ar = cityOrderRank(a._region, a._city), br = cityOrderRank(b._region, b._city);
+    if(ar !== br) return ar - br;                                              // 區域內城市順序
+    return (a.name||"").localeCompare(b.name||"", "zh-Hant");                   // 同城市再比名稱
+  });
+
+  return withRegion;
+}
+
+// 將排序結果寫入指定 <select>
+function applyVendorOptions(selectId, itemsSorted){
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  const frag = document.createDocumentFragment();
+  const first = document.createElement('option');
+  first.value = "";
+  first.textContent = "（未選擇）";
+  frag.appendChild(first);
+  for(const v of itemsSorted){
+    const opt = document.createElement('option');
+    opt.value = String(v.id);
+    opt.textContent = v._city ? `${v.name}（${v._city}）` : v.name;
+    frag.appendChild(opt);
+  }
+  sel.innerHTML = "";
+  sel.appendChild(frag);
+  sel.value = ""; // 預設空白
+}
+
+// 載入廠商→排序→寫入下拉；版本號避免舊請求覆蓋
+async function preloadVendors(selectId='np-vendor'){
+  if(!token) return;
+  const myVersion = ++vendorListLoadVersion;
+  const res = await fetch(API+'/vendors', {headers:{'Authorization':'Bearer '+token}});
+  let items = await res.json();
+  items = sortVendorsTW(items);
+  if(myVersion !== vendorListLoadVersion) return; // 忽略過期結果
+  applyVendorOptions(selectId, items);
+}
+
+
+document.addEventListener('click', (e)=>{
+  if(e.target && e.target.id==='btn-back-products'){
+    document.getElementById('view-product-detail').classList.add('hide');
+    switchTab('products');
+  }
+  if(e.target && e.target.id==='btn-back-vendors'){
+    document.getElementById('view-vendor-detail').classList.add('hide');
+    switchTab('vendors');
+  }
+}, {passive:true});
+
+async function loginIfNeeded(){
+  if(token) return;
+  const fd=new URLSearchParams(); fd.append('username','admin'); fd.append('password','admin123');
+  const r=await fetch(API+'/auth/login',{method:'POST', body: fd});
+  if(r.ok){
+    token=(await r.json()).access_token;
+    document.getElementById('status').textContent='已登入';
+  }else{
+    document.getElementById('status').textContent='未登入';
+  }
+  try{
+    const v=await fetch(API+'/__version'); if(v.ok){ const j=await v.json(); if(j.build) document.getElementById('ver').textContent=j.build; }
+  }catch(_){}
+}
+
+function maskPrice(value){
+  if(value===null || value===undefined || value==='') return '-';
+  return `<span class="price-mask" onclick="this.classList.add('revealed'); this.textContent='${String(value)}'">████</span>`;
+}
+
+async function searchProducts(){
+  await loginIfNeeded();
+  if(!token){ alert('請先登入'); return; }
+
+  const url = new URL(API + '/products');
+  const qEl = document.getElementById('q');
+  const q = qEl ? qEl.value.trim() : '';
+  if (q) url.searchParams.set('q', q);
+  url.searchParams.set('_', Date.now());
+
+  const mySeq = ++_productsReqSeq;
+  const res = await fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + token },
+    cache: 'no-store'
+  });
+  if (mySeq !== _productsReqSeq) return;
+
+  if (!res.ok){
+    document.getElementById('product-list').innerHTML =
+      `<div class="muted">讀取失敗（${res.status}）</div>`;
+    return;
+  }
+
+  const items = await res.json();
+  document.getElementById('product-list').innerHTML = items.map(p=>`
+    <div class="card clickable" onclick="openProduct(${p.id})" role="button" tabindex="0">
+    <div><b>${p.name||'-'}</b></div>
+    <div class="muted">${p.material||''} ${p.color||''}</div>
+    <div class="muted">最後生產數量：<span id="plq-${p.id}">${p.produced_last_qty ?? 0}</div>
+    <div class="muted">最後生產日期：<span id="pdat-${p.id}">${p.produced_at || '-'}</div>
+  </div>
+`).join('');
+
+}
+
+async function loadVendors(){
+  await loginIfNeeded();
+
+  const url = new URL(API + '/vendors');
+  const qEl = document.getElementById('vq');
+  if (qEl && qEl.value.trim()) url.searchParams.set('q', qEl.value.trim());
+
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  let items = await res.json();
+
+  // ✅ 地區排序（依你頁面上已定義的：findCityTW / regionRankTW / CITY_ORDER_TW / cityOrderRank / sortVendorsTW）
+  items = sortVendorsTW(items);
+
+  const list = document.getElementById('vendor-list');
+  list.innerHTML = items.map(v => `
+    <div class="card vendor-card" data-id="${v.id}">
+      <div><b>廠商名稱：</b>${v.name}${v._city ? `（${v._city}）` : ''}</div>
+      <div><b>地址：</b>${v.address || '-'}</div>
+      <div><b>電話：</b>${v.phone || '-'}</div>
+    </div>
+  `).join('');
+
+  // 讓整張卡片可點：進入詳細頁
+  list.querySelectorAll('.vendor-card').forEach(card=>{
+    card.addEventListener('click', () => openVendor(card.getAttribute('data-id')));
+  });
+}
+
+async function openProduct(id){
+  await loginIfNeeded();
+
+  const res = await fetch(API + '/products/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+  let body = '';
+  try { body = await res.text(); } catch {}
+  if (!res.ok) {
+    console.error('GET /products/' + id, res.status, body);
+    alert('讀取產品詳情失敗：' + res.status + '\n' + body);
+    if (res.status === 401) alert('登入逾時，請重新登入');
+    return;
+  }
+  const p = body ? JSON.parse(body) : {};
+
+  const unitPriceMasked = maskPrice(p.unit_price);
+  const producedAt = p.produced_at ? String(p.produced_at).slice(0,10) : '-';
+
+  // [A] 先渲染 HTML
+  document.getElementById('product-detail').innerHTML = `
+    <div class="card">
+      <h3>${p.name||'-'}</h3>
+      <div>產品編號：${p.product_no||'-'}</div>
+      <div>廠商：${p.vendor_name||'-'}</div>
+      <div>材質：${p.material||'-'}</div>
+      <div>料號：${p.sku||'-'}</div>
+      <div>顏色或色粉：${p.color||'-'}</div>
+      <div>成品重量(g)：${p.dye_amount||'-'} g</div>
+      <div>包裝方式：${p.packaging||'-'}</div>
+      <div>模具條碼：${p.mold_barcode||'-'}</div>
+      <div>單價：<span id="pd-price" data-price="${p.unit_price ?? ''}" style="cursor:pointer">${unitPriceMasked}</span></div>
+
+      <div class="muted">累積生產數量：<span id="pd-produced">${p.produced_qty ?? 0}</span></div>
+      <div class="muted">最後生產日期：<span id="pd-produced-at">${producedAt}</span></div>
+      <div class="muted">最後生產數量：<span id="pd-produced-last">${p.produced_last_qty ?? '-'}</span></div>
+
+      ${p.photo_url ? `<div style="margin-top:8px"><img src="${API}${p.photo_url}" style="max-width:100%;border-radius:8px"/></div>` : ''}
+
+      <div style="margin-top:12px" class="row">
+        <button id="btn-produce" data-id="${p.id}">最後生產數量</button>
+        <button id="btn-edit-product" data-id="${p.id}">修改</button>
+      </div>
+
+      <!-- 模具位置照片（僅保留最後一張） -->
+      <div id="mold-loc-block" style="margin-top:12px">
+        <div><b>模具位置照片（僅保留最後一張）</b>
+          <span class="muted" style="margin-left:8px">更新：${p.mold_loc_updated_at || '-'}</span>
+        </div>
+        <div id="pd-locphoto-wrap" style="margin-top:6px">
+          ${p.mold_loc_photo_url
+            ? `<img id="pd-locphoto" src="${API}${p.mold_loc_photo_url}" style="max-width:100%;border-radius:8px">`
+            : `<div class="muted">尚未上傳</div>`}
+        </div>
+        <!-- 隱藏的檔案選擇（拍照 / 相簿） -->
+        <input id="pd-loc-camera" type="file" accept="image/*" capture="environment" style="display:none">
+        <input id="pd-loc-gallery" type="file" accept="image/*" style="display:none">
+        <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+          <button id="btn-loc-camera" type="button">📷 拍照</button>
+          <button id="btn-loc-gallery" type="button">🖼 相簿</button>
+        </div>
+      </div>
+
+      <div id="pd-edit" class="hide" style="margin-top:12px">
+        <label>產品名稱</label><input id="pe-name" value="${p.name||''}" />
+        <label>產品編號</label><input id="pe-productno" value="${p.product_no||''}" />
+        <label>材質</label><input id="pe-material" value="${p.material||''}" />
+        <label>料號</label><input id="pe-sku" value="${p.sku||''}" />
+        <label>顏色或色粉</label><input id="pe-color" value="${p.color||''}" />
+        <label>成品重量(g)</label><input id="pe-dye" value="${p.dye_amount||''}" />
+        <label>包裝方式</label><input id="pe-packaging" value="${p.packaging||''}" />
+        <label>單價</label><input id="pe-price" type="number" step="0.01" value="${p.unit_price ?? ''}" />
+        <label>其他</label><textarea id="pe-other">${p.other||''}</textarea>
+        <div class="row">
+          <button id="btn-save-product" data-id="${p.id}">儲存</button>
+          <button id="btn-delete-product" data-id="${p.id}" style="background:#b00020;color:#fff">刪除</button>
+        </div>
+        <div id="pe-status" class="muted"></div>
+      </div>
+    </div>`;
+
+
+  // 1) 單價遮罩點擊顯示
+  const priceSpan = document.getElementById('pd-price');
+  if (priceSpan) {
+    priceSpan.onclick = () => {
+      const raw = priceSpan.getAttribute('data-price');
+      priceSpan.textContent = (raw === '' || raw == null) ? '-' : raw;
+      priceSpan.style.background = 'transparent';
+      priceSpan.style.color = '';
+    };
+  }
+
+  // 2) 最後生產（/produce）
+  const produceBtn = document.getElementById('btn-produce');
+  produceBtn.onclick = async (e) => {
+    const pid = e.target.getAttribute('data-id');
+    const qtyStr = prompt('請輸入此次生產數量（正整數）：'); 
+    if (!qtyStr) return;
+
+    const qty = parseInt(qtyStr, 10);
+    if (!(qty > 0)) { alert('請輸入正整數'); return; }
+
+    const r = await fetch(`${API}/products/${pid}/produce`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qty })
+    });
+
+    const data = await r.json();
+    if (!r.ok) { alert('登記失敗：' + (data.detail || r.status)); return; }
+
+    // 詳情頁更新
+    document.getElementById('pd-produced').textContent      = data.produced_qty;
+    document.getElementById('pd-produced-at').textContent   = data.produced_at || '-';
+    document.getElementById('pd-produced-last').textContent = (data.produced_last_qty ?? '-');
+
+    // ✅ 立即更新列表小卡（不要呼叫 searchProducts()）
+    window.updateListItemFromProduce(pid, data);
+  };
+
+  // 3) 編輯/刪除
+  const editBtn = document.getElementById('btn-edit-product');
+  editBtn.onclick = () => { document.getElementById('pd-edit').classList.toggle('hide'); };
+
+  document.getElementById('btn-save-product').onclick = async (e) => {
+    const pid = e.target.getAttribute('data-id');
+    const mlocEl = document.getElementById('pe-mloc'); // 你的詳情頁目前沒有這格，防呆
+    const payload = {
+      name: $('pe-name').value,
+      product_no: $('pe-productno').value,
+      material: $('pe-material').value,
+      sku: $('pe-sku').value,
+      color: $('pe-color').value,
+      dye_amount: $('pe-dye').value,
+      packaging: $('pe-packaging').value,
+      mold_location: mlocEl ? mlocEl.value : null,   // 防呆
+      unit_price: $('pe-price').value ? parseFloat($('pe-price').value) : null,
+      other: $('pe-other').value
+    };
+    const r = await fetch(API + '/products/' + pid, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok) { $('pe-status').textContent = '儲存失敗：' + (j.detail || r.status); return; }
+    $('pe-status').textContent = '已儲存';
+    openProduct(pid);
+  };
+
+  document.getElementById('btn-delete-product').onclick = async (e) => {
+  const pid = e.target.getAttribute('data-id');
+  if(!confirm('確定要刪除此產品嗎？')) return;
+  if(!confirm('此動作無法復原，真的要刪除嗎？')) return;
+
+  const r = await fetch(API+'/products/'+pid, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+
+  if(!r.ok){
+    const j = await r.json().catch(()=>({}));
+    alert('刪除失敗：' + (j.detail || r.status));
+    return;
+  }
+
+  alert('已刪除產品');
+  switchTab('products');
+  searchProducts();
+};
+
+  // 4) 顯示詳情頁
+  ['products','vendors','create','vendor-detail'].forEach(t=>{
+    const s = document.getElementById('view-'+t);
+    if (s) s.classList.add('hide');
+  });
+  document.getElementById('view-product-detail').classList.remove('hide');
+
+  // 5) 模具位置照片：拍照 / 相簿
+  const locCamBtn = document.getElementById('btn-loc-camera');
+  const locGalBtn = document.getElementById('btn-loc-gallery');
+  const inCam = document.getElementById('pd-loc-camera');
+  const inGal = document.getElementById('pd-loc-gallery');
+
+  if (locCamBtn && inCam) locCamBtn.onclick = () => inCam.click();
+  if (locGalBtn && inGal) locGalBtn.onclick = () => inGal.click();
+
+  async function updateMoldLocPhotoFile(file){
+    if (!file) return;
+    const fd = new FormData(); fd.append('photo', file);
+    const r = await fetch(`${API}/products/${p.id}/mold-location-photo`, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd
+    });
+    const d = await r.json().catch(()=> ({}));
+    if (!r.ok) { alert('位置照片更新失敗：' + (d.detail || r.status)); return; }
+    const wrap = document.getElementById('pd-locphoto-wrap');
+    wrap.innerHTML = `<img id="pd-locphoto" src="${API}${d.mold_loc_photo_url}" style="max-width:100%;border-radius:8px"/>`;
+  }
+  if (inCam) inCam.onchange = () => updateMoldLocPhotoFile(inCam.files[0]);
+  if (inGal) inGal.onchange = () => updateMoldLocPhotoFile(inGal.files[0]);
+}
+
+
+async function openVendor(id){
+  await loginIfNeeded();
+
+  // 先嘗試 /vendors/{id}，沒有則 fallback 用 /vendors 找
+  let v = null;
+  try {
+    const r = await fetch(`${API}/vendors/${id}`, { headers:{'Authorization':'Bearer '+token} });
+    if (r.ok) v = await r.json();
+  } catch(_) {}
+  if (!v) {
+    const r2 = await fetch(`${API}/vendors`, { headers:{'Authorization':'Bearer '+token} });
+    const all = await r2.json();
+    v = all.find(x => String(x.id) === String(id));
+  }
+  if (!v){ alert('找不到這家廠商'); return; }
+
+  const box = document.getElementById('vendor-detail');
+  box.innerHTML = `
+    <div class="card">
+      <h3 style="margin-bottom:8px">${v.name || '_'}</h3>
+
+      <!-- 👉 唯讀區塊（初始顯示） -->
+      <div id="vd-view">
+        <div><b>廠商名稱：</b>${v.name || '-'}</div>
+        <div><b>聯絡地址：</b>${v.address || '-'}</div>
+        <div><b>聯絡電話：</b>${v.phone || '-'}</div>
+        <div><b>聯絡人：</b>${v.contact_person || '-'}</div>
+        <div><b>傳真號碼：</b>${v.fax || '-'}</div>
+        <div><b>電子郵件：</b>${v.email || '-'}</div>
+        <div><b>其他：</b>${v.other || '-'}</div>
+        <div class="row" style="margin-top:12px">
+          <button id="btn-edit-vendor" data-id="${v.id}">編輯</button>
+          <button id="btn-back-vendors" class="secondary">返回列表</button>
+        </div>
+      </div>
+
+      <!-- ✏️ 編輯區塊（初始隱藏） -->
+      <div id="vd-edit" class="hide">
+        <label>廠商名稱</label><input id="ve-name" value="${v.name||''}">
+        <label>聯絡地址</label><input id="ve-address" value="${v.address||''}">
+        <label>聯絡電話</label><input id="ve-phone" value="${v.phone||''}">
+        <label>聯絡人</label><input id="ve-contact" value="${v.contact_person||''}">
+        <label>傳真號碼</label><input id="ve-fax" value="${v.fax||''}">
+        <label>電子郵件</label><input id="ve-email" value="${v.email||''}">
+        <label>其他</label><textarea id="ve-other">${v.other||''}</textarea>
+
+        <div class="row" style="margin-top:10px">
+          <button id="btn-save-vendor" data-id="${v.id}">儲存</button>
+          <button id="btn-cancel-edit" class="secondary">取消</button>
+          <button id="btn-delete-vendor" data-id="${v.id}" style="background:#b00020;color:#fff;margin-left:auto">刪除</button>
+        </div>
+        <div id="ve-status" class="muted"></div>
+      </div>
+    </div>
+  `;
+
+  // 切換：編輯 / 取消
+  const viewEl = document.getElementById('vd-view');
+  const editEl = document.getElementById('vd-edit');
+  document.getElementById('btn-edit-vendor').onclick = () => {
+    viewEl.classList.add('hide'); editEl.classList.remove('hide');
+  };
+  document.getElementById('btn-cancel-edit').onclick = () => {
+    editEl.classList.add('hide'); viewEl.classList.remove('hide');
+  };
+
+  // 返回列表
+  document.getElementById('btn-back-vendors').onclick = async () => {
+    switchTab('vendors'); await loadVendors();
+  };
+
+  // 儲存（需後端 PUT /vendors/{id}）
+  document.getElementById('btn-save-vendor').onclick = async (e)=>{
+    const vid = e.target.getAttribute('data-id');
+    const payload = {
+      name: $('ve-name').value.trim(),
+      address: $('ve-address').value.trim(),
+      phone: $('ve-phone').value.trim(),
+      contact_person: $('ve-contact').value.trim(),
+      fax: $('ve-fax').value.trim(),
+      email: $('ve-email').value.trim(),
+      other: $('ve-other').value
+    };
+    const r = await fetch(`${API}/vendors/${vid}`, {
+      method:'PUT',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok){
+      const j = await r.json().catch(()=>({}));
+      $('ve-status').textContent = '儲存失敗：' + (j.detail || r.status);
+      return;
+    }
+    $('ve-status').textContent = '已儲存';
+    // 更新畫面與列表/下拉
+    await loadVendors();
+    await preloadVendors('np-vendor');
+    openVendor(vid); // 重新載入詳細頁（回到唯讀狀態）
+  };
+
+  // 刪除（需後端 DELETE /vendors/{id}）
+  document.getElementById('btn-delete-vendor').onclick = async (e) => {
+  const vid = e.target.getAttribute('data-id');
+  if (!confirm('確定要刪除此廠商資料嗎？')) return;
+  if (!confirm('真的要刪除了嗎？這個動作無法復原。')) return;
+
+  const r = await fetch(API + '/vendors/' + vid, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    alert('刪除失敗：' + (j.detail || r.status));
+    return;
+  }
+
+  alert('廠商資料已刪除');
+  switchTab('vendors');
+  loadVendors();
+};
+
+  // 顯示詳情頁
+  ['products','vendors','newproduct','newvendor','create','product-detail'].forEach(t=>{
+    const s = document.getElementById('view-'+t); if(s) s.classList.add('hide');
+  });
+  document.getElementById('view-vendor-detail').classList.remove('hide');
+}
+
+function $(id){ return document.getElementById(id) || null; }
+
+// 物件→訊息
+function toMsg(d){
+  if (Array.isArray(d)) return d.map(x => ((x.loc||[]).join('.')+': '+(x.msg||x.detail||'錯誤'))).join('；');
+  if (d && typeof d === 'object') return d.detail || JSON.stringify(d);
+  return String(d ?? '');
+}
+
+// 安全 append：元件存在才 append；檔案 input 只在有檔案才 append
+function appendIf(fd, id, field){
+  const el = $(id);
+  if (!el) return;
+  if (el.type === 'file') { if (el.files && el.files[0]) fd.append(field, el.files[0]); }
+  else { if (el.value !== '') fd.append(field, el.value); }
+}
+
+// 安全清空：元件存在才清
+function clearIf(id){
+  const el = $(id);
+  if (!el) return;
+  if (el.type === 'file') el.value = '';
+  else if (el.tagName === 'SELECT') el.value = '';
+  else el.value = '';
+}
+
+async function createProduct(){
+  await loginIfNeeded();
+
+  const name = $('np-name')?.value.trim() || '';
+  const productNo = $('np-productno')?.value.trim() || '';
+  const vendorId = $('np-vendor')?.value || '';   // ✅ 可空白
+
+  if (!name){ $('np-status').textContent = '請填「產品名稱」。'; return; }
+  
+
+  // 組 FormData（都採用安全 append）
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('product_no', productNo);
+  fd.append('vendor_id', vendorId);              // 可空字串，後端會視為 None
+  appendIf(fd, 'np-material',  'material');
+  appendIf(fd, 'np-sku',       'sku');
+  appendIf(fd, 'np-color',     'color');
+  appendIf(fd, 'np-dye',       'dye_amount');
+  appendIf(fd, 'np-packaging', 'packaging');     // 若頁面沒有這欄不會出錯
+  appendIf(fd, 'np-price',     'unit_price');
+  appendIf(fd, 'np-other',     'other');
+
+  // 相機/相簿：擇一或都無
+  // 你若有 set 過 selectedPhotoFile 也一併考慮
+  const camFile = $('np-photo-camera')?.files?.[0] || null;
+  const galFile = $('np-photo-gallery')?.files?.[0] || null;
+  const file = (typeof selectedPhotoFile !== 'undefined' && selectedPhotoFile) ? selectedPhotoFile : (galFile || camFile);
+  if (file) fd.append('photo', file);
+
+  let respText = '';
+  try{
+    const res = await fetch(API + '/products', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd
+    });
+    respText = await res.text();
+    let data; try{ data = JSON.parse(respText); } catch{ data = { detail: respText }; }
+
+    if (!res.ok){
+      $('np-status').textContent = '新增失敗：' + toMsg(data.detail ?? data);
+      return;
+    }
+
+    $('np-status').textContent = '新增成功！條碼：' + (data.mold_barcode || '-');
+
+    // ✅ 成功後安全清空（不存在的 id 會自動略過；移除你原本對 np-photo 的操作）
+    [
+      'np-name','np-productno','np-vendor','np-material','np-sku','np-color','np-dye',
+      'np-packaging','np-price','np-other','np-photo-camera','np-photo-gallery','np-photo-name'
+      // ❌ 不要放已移除的 'np-mloc' 或 'np-photo'
+    ].forEach(clearIf);
+
+    // 若你有用到 selectedPhotoFile 暫存，清掉
+    if (typeof selectedPhotoFile !== 'undefined') selectedPhotoFile = null;
+
+    // 重新載入列表
+    try { await searchProducts(); } catch(e){}
+  }catch(err){
+    $('np-status').textContent = '新增失敗（網路/程式）：' + (err?.message || '') + (respText ? '｜'+respText : '');
+  }
+}
+
+// 新增廠商：成功後重新載入下拉，並確保最後寫入者勝出
+function $(id){ return document.getElementById(id) || null; }
+function setTextIf(id, text){ const el=$(id); if(el) el.textContent=text; }
+
+async function createVendor(){
+  await loginIfNeeded();
+
+  const name = $('nv-name')?.value.trim() || '';
+  if(!name){ setTextIf('nv-status','請填「廠商名稱」。'); return; }
+
+  const payload = {
+    name,
+    address: $('nv-addr')?.value || '',
+    phone: $('nv-phone')?.value || '',
+    contact_person: $('nv-contact')?.value || '',
+    fax: $('nv-fax')?.value || '',
+    email: $('nv-email')?.value || '',
+    other: $('nv-other')?.value || ''
+  };
+
+  let body = '';
+  try{
+    const res = await fetch(API+'/vendors', {
+      method: 'POST',
+      headers: { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    body = await res.text();
+    let data; try{ data = JSON.parse(body); } catch { data = { detail: body }; }
+
+    if(!res.ok){
+      setTextIf('nv-status', '新增失敗：' + (data.detail || res.status));
+      return;
+    }
+
+    setTextIf('nv-status', '新增成功：' + (data.name || name));
+
+    // 清空欄位（不存在就略過，不會丟錯）
+    ['nv-name','nv-addr','nv-phone','nv-contact','nv-fax','nv-email','nv-other']
+      .forEach(id => { const el=$(id); if(el) el.value=''; });
+
+    // 重新載入：下拉選單與列表（如果你有 sortVendorsTW 會沿用）
+    try { await preloadVendors(); } catch(e){}
+    try { await loadVendors(); } catch(e){}
+
+  }catch(err){
+    setTextIf('nv-status','新增失敗（網路/程式）：' + (err?.message || '') + (body? '｜'+body : ''));
+  }
+}
+
+async function importVendorsExcel(){
+  await loginIfNeeded();
+  const f=document.getElementById('ve-file').files[0]; if(!f){ alert('請先選擇檔案'); return; }
+  const fd=new FormData(); fd.append('file', f);
+  const res=await fetch(API+'/vendors/import_excel',{method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
+  const data=await res.json();
+  document.getElementById('ve-status').textContent = res.ok ? (data.detail||'匯入完成') : ('匯入失敗：'+(data.detail||res.status));
+  if(res.ok){ preloadVendors(); }
+}
+
+switchTab('products');
+loginIfNeeded().then(()=>{ preloadVendors(); });
+</script>
+
+<!-- mold location photo detail block is rendered in openProduct() dynamically -->
+
+</body>
+</html>
