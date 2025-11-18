@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, and_
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
+import json
 from pydantic import BaseModel
 
 from ..deps import get_db, get_current_user
@@ -47,7 +48,34 @@ def _fmt_date_tw(dt):
     # 只回 YYYY-MM-DD
     return dt.strftime("%Y-%m-%d")
 
+def _get_photo_paths(p: Product) -> List[str]:
+    paths: List[str] = []
+    if getattr(p, "photo_path", None):
+        paths.append(p.photo_path)
+
+    extra = getattr(p, "extra_photo_paths", None)
+    if extra:
+        try:
+            data = json.loads(extra)
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, str) and item and item not in paths:
+                        paths.append(item)
+        except Exception:
+            for part in str(extra).split(","):
+                part = part.strip()
+                if part and part not in paths:
+                    paths.append(part)
+    return paths
+
+
+def _get_photo_urls(p: Product) -> List[str]:
+    return [f"/uploads/{path}" for path in _get_photo_paths(p)]
+
+
+
 def _detail_from_model(p: Product, user) -> ProductDetailOut:
+    photo_urls = _get_photo_urls(p)
     return ProductDetailOut(
         id=p.id,
         name=p.name,
@@ -61,7 +89,8 @@ def _detail_from_model(p: Product, user) -> ProductDetailOut:
         mold_barcode=p.mold_barcode,
         mold_location=getattr(p, "mold_location", None),
         other=p.other,
-        photo_url=(f"/uploads/{p.photo_path}" if p.photo_path else None),
+        photo_url=(photo_urls[0] if photo_urls else None),
+        photo_urls=photo_urls,
         unit_price=(p.unit_price if getattr(user, "role", None) == "admin" else None),
         produced_qty=(p.produced_qty or 0),
         produced_at=_fmt_date_tw(getattr(p, "produced_at", None)),
@@ -134,7 +163,8 @@ def list_products(
             produced_qty=(p.produced_qty or 0),
             produced_last_qty=(p.produced_last_qty if p.produced_last_qty is not None else 0),
             produced_at=(_fmt_date(getattr(p, "produced_at", None))),
-            photo_url=(f"/uploads/{p.photo_path}" if p.photo_path else None),
+            photo_urls=_get_photo_urls(p),
+            photo_url=(_get_photo_urls(p)[0] if _get_photo_urls(p) else None),
         )
         for p in items
     ]
@@ -148,31 +178,7 @@ def get_product_detail(
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # 這個 helper 用你檔案裡現有的欄位組裝回傳
-    return ProductDetailOut(
-        id=p.id,
-        name=p.name,
-        product_no=p.product_no,
-        vendor_name=(p.vendor.name if p.vendor else None),
-        material=p.material,
-        sku=p.sku,
-        color=p.color,
-        dye_amount=p.dye_amount,
-        packaging=p.packaging,
-        mold_barcode=p.mold_barcode,
-        # 若你已經移除文字版模具位置，可刪除下一行
-        mold_location=getattr(p, "mold_location", None),
-        other=p.other,
-        photo_url=(f"/uploads/{p.photo_path}" if p.photo_path else None),
-        unit_price=(p.unit_price if getattr(user, "role", None) == "admin" else None),
-        produced_qty=(p.produced_qty or 0),
-        produced_at=(p.produced_at.strftime("%Y-%m-%d") if getattr(p, "produced_at", None) else None),
-        produced_last_qty=(p.produced_last_qty if p.produced_last_qty is not None else 0),
-        mold_loc_photo_url=(f"/uploads/{getattr(p, 'mold_loc_photo', None)}"
-                            if getattr(p, "mold_loc_photo", None) else None),
-        mold_loc_updated_at=(p.mold_loc_updated_at.strftime("%Y-%m-%d")
-                            if getattr(p, "mold_loc_updated_at", None) else None),
-    )
+    return _detail_from_model(p, user)
 
 @router.post("/{pid}/produce", response_model=ProductDetailOut)
 def produce(pid: int, qty: int = Body(..., embed=True),
@@ -217,31 +223,8 @@ def get_product_detail(pid: int, db: Session, user: User) -> ProductDetailOut:
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    def fmt(d):
-        return d.strftime("%Y-%m-%d") if d else None
+    return _detail_from_model(p, user)
 
-    return ProductDetailOut(
-        id=p.id,
-        name=p.name,
-        product_no=p.product_no,
-        vendor_name=(p.vendor.name if p.vendor else None),
-        material=p.material,
-        sku=p.sku,
-        color=p.color,
-        dye_amount=p.dye_amount,
-        packaging=p.packaging,
-        mold_barcode=p.mold_barcode,
-        other=p.other,
-        photo_url=(f"/uploads/{p.photo_path}" if p.photo_path else None),
-        unit_price=(p.unit_price if getattr(user, "role", None) == "admin" else None),
-        mold_loc_photo_url=(f"/uploads/{p.mold_loc_photo}" if getattr(p, "mold_loc_photo", None) else None),
-        mold_loc_updated_at=fmt(getattr(p, "mold_loc_updated_at", None)),
-        produced_qty=getattr(p, "produced_qty", 0),
-        produced_at=fmt(getattr(p, "produced_at", None)),
-        produced_last_qty=getattr(p, "produced_last_qty", None),
-    )
-
-# 取代你目前的 create_product（最小修改版）
 @router.post("", response_model=ProductDetailOut)
 async def create_product(
     name: str = Form(...),
@@ -256,6 +239,7 @@ async def create_product(
     mold_location: Optional[str] = Form(None),  # 你若已經不需要這個欄位，可移除
     other: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
+    photos: Optional[List[UploadFile]] = File(None),
     mold_location_photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
@@ -275,10 +259,23 @@ async def create_product(
     # --- 產生 13 碼條碼：無廠商 = 00 ---
     code13 = next_barcode(db, vendor.id if vendor else 0)
 
-    # --- 成品照片：正方形裁切 + 縮小 20%（僅一次處理） ---
-    if photo:
+    # --- 成品照片：支援多張 ---
+    photo_paths: List[str] = []
+
+    if photos:
+        for f in photos:
+            if not f:
+                continue
+            raw = await f.read()
+            path = save_bytes_crop_square_reduce(raw, f.filename)
+            photo_paths.append(path)
+    elif photo:
         raw = await photo.read()
-        photo_path = save_bytes_crop_square_reduce(raw, photo.filename)
+        path = save_bytes_crop_square_reduce(raw, photo.filename)
+        photo_paths.append(path)
+
+    photo_path = photo_paths[0] if photo_paths else None
+    extra_photo_paths = json.dumps(photo_paths) if photo_paths else None
 
     # --- 模具位置照片：只保留最後一張 ---
     loc_photo_path = None
@@ -300,6 +297,7 @@ async def create_product(
         mold_barcode=code13,
         other=other,
         photo_path=photo_path,
+        extra_photo_paths=extra_photo_paths,
         mold_loc_photo=loc_photo_path,
         mold_loc_updated_at=(datetime.utcnow() if loc_photo_path else None),
     )
