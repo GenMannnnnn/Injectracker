@@ -8,7 +8,9 @@ NEEDED = {
     "mold_loc_photo": "TEXT",
     "mold_loc_updated_at": "DATETIME",
     "produced_last_qty": "INTEGER",
+    "extra_photo_paths": "TEXT",
 }
+
 
 def has_column(cur, table, col):
     cur.execute(f"PRAGMA table_info({table})")

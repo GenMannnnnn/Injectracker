@@ -39,6 +39,7 @@ class Product(Base):
     mold_location = Column(String)
     other = Column(Text)
     photo_path = Column(Text, nullable=True)
+    extra_photo_paths = Column(Text, nullable=True)
     produced_qty = Column(Integer, default=0)
     produced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

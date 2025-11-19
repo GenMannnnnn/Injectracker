@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 class Token(BaseModel):
     access_token: str
@@ -36,6 +36,7 @@ class ProductListOut(BaseModel):
     produced_last_qty: Optional[int] = 0
     produced_at: Optional[str] = None
     photo_url: Optional[str] = None
+    photo_urls: Optional[List[str]] = None
 
 class ProductDetailOut(ProductListOut):
     material: Optional[str] = None
