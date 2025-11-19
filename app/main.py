@@ -10,7 +10,7 @@ from .routers.vendors import router as vendors_router
 from .routers.products import router as products_router
 from .utils import UPLOAD_DIR
 
-BUILD_VERSION = "V2.1.1"
+BUILD_VERSION = "V2.2.0"
 
 app = FastAPI(title="ERP Mobile API")
 
