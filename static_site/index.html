@@ -28,6 +28,7 @@
     .row > button { flex:1; }
     .photo-gallery {display: flex; gap: 8px; overflow-x: auto; padding: 6px 0;}
     .photo-gallery img {max-width: 100%; height: auto; max-height: 50vh;  /* 手機上避免太高 */ object-fit: contain; border-radius: 12px; flex-shrink: 0;    /* 讓橫向滾動生效 */}
+    .photo-preview-row img {height: 60px; width: auto; object-fit:cover; border-radius: 8px; flex-shrink: 0; max-width: none !important; max-height: none !important;}
     @media (max-width: 600px) {.photo-gallery img {max-height: 40vh;}}
   </style>
 </head>
