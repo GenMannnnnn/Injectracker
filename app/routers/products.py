@@ -436,3 +436,59 @@ async def update_mold_loc_photo(
         produced_at=(p.produced_at.strftime("%Y-%m-%d") if getattr(p, "produced_at", None) else None),
         produced_last_qty=getattr(p, "produced_last_qty", None),
     )
+    
+@router.put("/{pid}/photos", response_model=ProductDetailOut)
+async def update_product_photos(
+    pid: int,
+    keep_paths: Optional[str] = Form(None),
+    photos: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # 1. 找出產品
+    p = db.query(Product).filter(Product.id == pid).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # 2. 既有所有照片路徑（含 photo_path + extra_photo_paths）
+    existing = _get_photo_paths(p)
+
+    # 3. 前端傳來要保留的舊檔名
+    keep_list: List[str] = []
+    if keep_paths:
+        try:
+            data = json.loads(keep_paths)
+            if isinstance(data, list):
+                keep_list = [str(x) for x in data]
+        except Exception:
+            # 後備：逗號分隔字串
+            keep_list = [s.strip() for s in str(keep_paths).split(",") if s.strip()]
+
+    # 只保留本來就存在的檔名，避免亂傳
+    keep_final = [path for path in keep_list if path in existing]
+
+    # 4. 刪除被移除的舊照片
+    for path in existing:
+        if path not in keep_final:
+            remove_upload_file(path)
+
+    # 5. 把要保留的 + 新增的組成新的 photo_paths
+    photo_paths: List[str] = list(keep_final)
+
+    if photos:
+        for f in photos:
+            if not f:
+                continue
+            raw = await f.read()
+            new_path = save_bytes_crop_square_reduce(raw, f.filename)
+            photo_paths.append(new_path)
+
+    # 6. 更新 DB 欄位
+    p.photo_path = photo_paths[0] if photo_paths else None
+    p.extra_photo_paths = json.dumps(photo_paths) if photo_paths else None
+
+    db.commit()
+    db.refresh(p)
+
+    # 7. 回傳最新詳情（含 photo_urls）
+    return _detail_from_model(p, user)
