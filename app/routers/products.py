@@ -127,55 +127,57 @@ def _detail_from_model(p: Product, user) -> ProductDetailOut:
 class ProduceIn(BaseModel):
     qty: int
 
-@router.get("", response_model=List[ProductListOut])
+@router.get("")
 def list_products(
     q: Optional[str] = None,
-    vendor_id: Optional[int] = None,
-    product_no: Optional[str] = None,
-    sku: Optional[str] = None,
-    mold_barcode: Optional[str] = None,
     page: int = 1,
-    size: int = 20,
+    size: int = 15,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user)
+    user=Depends(get_current_user),
 ):
-    query = db.query(Product).outerjoin(Vendor)
+    """
+    後端分頁：
+    - 搜尋：產品名稱 / 廠商名稱
+    - 排序：先廠商名稱，再產品名稱
+    - 回傳：{ items, total, page, size }
+    """
 
+    base_query = (
+        db.query(Product, Vendor.name.label("vendor_name"))
+        .outerjoin(Vendor, Product.vendor_id == Vendor.id)
+    )
+
+    # 搜尋（廠商 OR 產品名稱）
     if q:
-        q_norm = q.strip().lower()
-        query = query.filter(func.lower(Product.name).like(f"%{q_norm}%"))
+        q_norm = f"%{q.strip().lower()}%"
+        base_query = base_query.filter(
+            or_(
+                func.lower(Product.name).like(q_norm),
+                func.lower(Vendor.name).like(q_norm),
+            )
+        )
 
-    if vendor_id:
-        query = query.filter(Product.vendor_id == vendor_id)
-    if product_no:
-        query = query.filter(Product.product_no == product_no)
-    if sku:
-        query = query.filter(Product.sku == sku)
-    if mold_barcode:
-        query = query.filter(Product.mold_barcode == mold_barcode)
-
-    query = query.order_by(
+    # 排序（廠商名稱 -> 產品名稱）
+    base_query = base_query.order_by(
         func.lower(func.coalesce(func.nullif(Vendor.name, ''), 'zzz')).asc(),
         func.lower(Product.name).asc(),
         Product.id.desc(),
-    ).offset((page - 1) * size).limit(size)
+    )
 
-    items = query.all()
+    # 計算總筆數
+    total = base_query.count()
 
-    def _fmt_date(d):
-        if not d:
-            return None
-        try:
-            return d.strftime("%Y-%m-%d")
-        except Exception:
-            return str(d)
+    # 分頁
+    offset = (page - 1) * size
+    rows = base_query.offset(offset).limit(size).all()
 
-    return [
-        ProductListOut(
+    items: List[ProductListOut] = []
+    for p, vendor_name in rows:
+        items.append(ProductListOut(
             id=p.id,
             name=p.name,
             product_no=p.product_no,
-            vendor_name=(p.vendor.name if p.vendor else None),
+            vendor_name=vendor_name,
             material=p.material,
             sku=p.sku,
             color=p.color,
@@ -186,12 +188,21 @@ def list_products(
             other=p.other,
             produced_qty=(p.produced_qty or 0),
             produced_last_qty=(p.produced_last_qty if p.produced_last_qty is not None else 0),
-            produced_at=(_fmt_date(getattr(p, "produced_at", None))),
+            produced_at=(
+                p.produced_at.strftime("%Y-%m-%d")
+                if getattr(p, "produced_at", None) else None
+            ),
             photo_urls=_get_photo_urls(p),
             photo_url=(_get_photo_urls(p)[0] if _get_photo_urls(p) else None),
-        )
-        for p in items
-    ]
+        ))
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "size": size,
+    }
+
 
 @router.get("/{pid}", response_model=ProductDetailOut)
 def get_product_detail(

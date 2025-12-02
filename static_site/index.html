@@ -26,10 +26,9 @@
     .clickable { cursor:pointer; }
     .row { display:flex; gap:8px; }
     .row > button { flex:1; }
-    .photo-gallery {display: flex; gap: 8px; overflow-x: auto; padding: 6px 0;}
-    .photo-gallery img {max-width: 100%; height: auto; max-height: 50vh;  /* 手機上避免太高 */ object-fit: contain; border-radius: 12px; flex-shrink: 0;    /* 讓橫向滾動生效 */}
-    .photo-preview-row img {height: 100px; width: auto; object-fit:cover; border-radius: 8px; flex-shrink: 0; max-width: none !important; max-height: none !important;}
-    @media (max-width: 600px) {.photo-gallery img {max-height: 40vh;}}
+    .photo-thumb {width: 72px;  height: 72px; object-fit: cover; border-radius: 8px; margin: 4px; }
+    .photo-thumb-wrap {display: inline-block; position: relative; }
+    .photo-thumb-wrap button {position: absolute; top: 0; right: 0; border: none; background: rgba(0,0,0,0.6); color: #fff; border-radius: 999px; padding: 0 4px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -71,16 +70,14 @@
     </div>
 
     <div id="sub-newproduct">
-      <!-- 隱藏的檔案 input：相機 / 相簿，可選多張 -->
       <input id="np-photo-camera" class="hide" type="file" accept="image/*" capture="environment" />
-      <input id="np-photo-gallery" class="hide" type="file" accept="image/*" multiple />
+      <input id="np-photo-gallery" class="hide" type="file" accept="image/*" />
       <div class="row">
         <button id="btn-photo-camera" type="button">📷 拍照</button>
-        <button id="btn-photo-gallery" type="button">🖼 相簿（可多選）</button>
+        <button id="btn-photo-gallery" type="button">🖼 相簿</button>
       </div>
       <div id="np-photo-name" class="muted"></div>
-      <div id="np-photo-preview" class="photo-preview-row"></div>
-
+      <div id="np-photo-preview" class="muted"></div>
       <label>產品名稱</label><input id="np-name" />
       <label>產品編號</label><input id="np-productno" />
       <label>廠商名稱</label><select id="np-vendor"><option value="">（可留空）</option></select>
@@ -89,11 +86,8 @@
       <label>顏色或色粉</label><input id="np-color" />
       <label>成品重量(g)</label><input id="np-dye" />
       <label>包裝方式</label><input id="np-packaging" />
-      <label>產品單價</label><input id="np-price" type="number" step="0.01" />
-
-      <label>其他</label>
-      <textarea id="np-other">外徑：&#10;內徑：&#10;厚度：&#10;溝寬：</textarea>
-
+      <label>產品單價（可留空）</label><input id="np-price" type="number" step="0.01" />
+      <label>其他</label><textarea id="np-other"></textarea>
       <button id="btn-create-product">新增</button>
       <div id="np-status" class="muted"></div>
     </div>
@@ -108,7 +102,7 @@
       <label>其他</label><textarea id="nv-other"></textarea>
       <button id="btn-create-vendor">新增廠商</button>
       <div class="card" style="margin-top:10px">
-        <div class="muted">或匯入 Excel</div>
+        <div class="muted">或匯入 Excel（必含「廠商名稱」欄）</div>
         <input type="file" id="ve-file" accept=".xlsx,.xls" />
         <button id="btn-import-vendor-excel">匯入 Excel</button>
         <div id="ve-status" class="muted"></div>
@@ -133,27 +127,14 @@
 
 <script>
 let token=''; const API = location.origin;
-
-// 「其他」欄位的預設模板
-const DEFAULT_OTHER_TEXT = "外徑：\n內徑：\n厚度：\n溝寬：";
-
-// 多張照片暫存（新增產品）
-let selectedPhotoFiles = [];
-
-// 產品詳情編輯用的照片暫存
-let pdEditPhotoPaths = [];
-let pdNewPhotoFiles = [];
-
+let selectedPhotos = [];
 let _productsReqSeq = 0;
+let productPage = 1;            // 目前頁碼
+const PRODUCT_PAGE_SIZE = 10;   // 每頁幾筆（對應後端 size）
+let productTotalPages = 1;      // 總頁數
+let productTotalItems = 0;      // 總筆數
 
-function escapeHtml(str){
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#039;');
-}
+const OTHER_TEMPLATE = "外徑：\n內徑：\n厚度：\n溝寬：";
 
 function $(id){return document.getElementById(id)}
 function switchTab(name){
@@ -162,7 +143,7 @@ function switchTab(name){
     if(s){ s.classList.toggle('hide', t!==name); }
     if(b){ b.classList.toggle('active', t===name); }
   });
-  if(name==='products'){ searchProducts(); }
+  if(name==='products'){ productPage = 1; searchProducts(1); }
   if(name==='vendors'){ loadVendors(); }
   if(name==='create'){ preloadVendors(); }
 }
@@ -176,7 +157,7 @@ function switchSub(name){
 document.getElementById('subtab-newproduct').onclick=()=>switchSub('newproduct');
 document.getElementById('subtab-newvendor').onclick=()=>switchSub('newvendor');
 
-document.getElementById('btn-search').onclick=searchProducts;
+document.getElementById('btn-search').onclick=()=>{productPage = 1; searchProducts(1);};
 document.getElementById('btn-vsearch').onclick=loadVendors;
 document.getElementById('btn-create-product').onclick=createProduct;
 document.getElementById('btn-create-vendor').onclick=createVendor;
@@ -199,39 +180,56 @@ window.updateListItemFromProduce = function(id, payload){
 };
 
 
-function renderPhotoPreview(){
-  const textEl = $('np-photo-name');
+function updatePhotoPreview(){
   const wrap = $('np-photo-preview');
-  if (!textEl || !wrap) return;
+  const nameEl = $('np-photo-name');
+  if(!wrap) return;
 
-  wrap.innerHTML = '';
-  if (!selectedPhotoFiles.length){
-    textEl.textContent = '尚未選擇照片';
+  if(!selectedPhotos.length){
+    wrap.innerHTML = '<span class="muted">尚未選擇照片</span>';
+    if (nameEl) nameEl.textContent = '';
     return;
   }
 
-  textEl.textContent = `已選擇 ${selectedPhotoFiles.length} 張照片`;
+  wrap.innerHTML = '';
+  selectedPhotos.forEach((file, idx)=>{
+    const url = URL.createObjectURL(file);
+    const div = document.createElement('div');
+    div.className = 'photo-thumb-wrap';
+    div.innerHTML = `
+      <img src="${url}" class="photo-thumb">
+      <button type="button" data-idx="${idx}">×</button>
+    `;
+    wrap.appendChild(div);
+  });
+  if (nameEl) nameEl.textContent = `已選擇 ${selectedPhotos.length} 張`;
 
-  selectedPhotoFiles.forEach(file => {
-    const img = document.createElement('img');
-    img.alt = file.name;
-    img.title = file.name;
-    img.src = URL.createObjectURL(file);
-    wrap.appendChild(img);
+  wrap.querySelectorAll('button[data-idx]').forEach(btn=>{
+    btn.onclick = () => {
+      const i = parseInt(btn.getAttribute('data-idx'), 10);
+      if (!isNaN(i)) {
+        selectedPhotos.splice(i, 1);
+        updatePhotoPreview();
+      }
+    };
   });
 }
 
 function handlePhotoChange(input){
-  if(!input.files || !input.files.length) return;
+  if(!(input.files && input.files.length)) return;
   const files = Array.from(input.files);
 
-  // 相機每拍一次就多一張；相簿一次可選多張
-  selectedPhotoFiles = selectedPhotoFiles.concat(files);
+  if (input.id === 'np-photo-camera') {
+    // 拍照通常只有一張，就加第一張
+    selectedPhotos.push(files[0]);
+    $('np-photo-gallery').value = '';
+  } else {
+    // 相簿可以一次選多張
+    selectedPhotos = selectedPhotos.concat(files);
+    $('np-photo-camera').value = '';
+  }
 
-  // 讓同一個 input 可以再選檔
-  input.value = '';
-
-  renderPhotoPreview();
+  updatePhotoPreview();
 }
 
 function updateListItemFromProduce(id, payload){
@@ -367,6 +365,10 @@ document.addEventListener('click', (e)=>{
     document.getElementById('view-vendor-detail').classList.add('hide');
     switchTab('vendors');
   }
+  const otherEl = document.getElementById('np-other');
+  if (otherEl && !otherEl.value) {
+    otherEl.value = OTHER_TEMPLATE;
+  }
 }, {passive:true});
 
 async function loginIfNeeded(){
@@ -389,15 +391,29 @@ function maskPrice(value){
   return `<span class="price-mask" onclick="this.classList.add('revealed'); this.textContent='${String(value)}'">████</span>`;
 }
 
-async function searchProducts(){
+async function searchProducts(page){
   await loginIfNeeded();
-  if(!token){ alert('請先登入'); return; }
+  if (!token) { alert('請先登入'); return; }
+
+  // 如果有帶 page 參數，就更新目前頁碼
+  if (typeof page === 'number' && page >= 1) {
+    productPage = page;
+  }
+  if (!productPage || productPage < 1) productPage = 1;
 
   const url = new URL(API + '/products');
+
+  // 搜尋關鍵字（廠商 + 產品名稱，由後端處理）
   const qEl = document.getElementById('q');
   const q = qEl ? qEl.value.trim() : '';
   if (q) url.searchParams.set('q', q);
-  url.searchParams.set('_', Date.now());
+
+  // 分頁參數
+  url.searchParams.set('page', String(productPage));
+  url.searchParams.set('size', String(PRODUCT_PAGE_SIZE));
+
+  // 防止快取
+  url.searchParams.set('_', Date.now().toString());
 
   const mySeq = ++_productsReqSeq;
   const res = await fetch(url, {
@@ -406,23 +422,64 @@ async function searchProducts(){
   });
   if (mySeq !== _productsReqSeq) return;
 
+  const listEl = document.getElementById('product-list');
+
   if (!res.ok){
-    document.getElementById('product-list').innerHTML =
-      `<div class="muted">讀取失敗（${res.status}）</div>`;
+    listEl.innerHTML = `<div class="muted">讀取失敗（${res.status}）</div>`;
     return;
   }
 
-  const items = await res.json();
-  document.getElementById('product-list').innerHTML = items.map(p=>`
-    <div class="card clickable" onclick="openProduct(${p.id})" role="button" tabindex="0">
-    <div><b>${p.name||'-'}</b></div>
-    <div class="muted">${p.material||''} ${p.color||''}</div>
-    <div class="muted">最後生產數量：<span id="plq-${p.id}">${p.produced_last_qty ?? 0}</div>
-    <div class="muted">最後生產日期：<span id="pdat-${p.id}">${p.produced_at || '-'}</div>
-  </div>
-`).join('');
+  const data = await res.json();
 
+  // 兼容：如果還是舊版（直接傳陣列）就當全部資料
+  const items = Array.isArray(data) ? data : (data.items || []);
+
+  productTotalItems = (typeof data.total === 'number') ? data.total : items.length;
+  const size = (typeof data.size === 'number') ? data.size : PRODUCT_PAGE_SIZE;
+  productPage = (typeof data.page === 'number') ? data.page : productPage;
+  productTotalPages = Math.max(1, Math.ceil(productTotalItems / size));
+
+  // 產品卡片
+  const cardsHtml = items.map(p => `
+    <div class="card clickable" onclick="openProduct(${p.id})" role="button" tabindex="0">
+      <div><b>${p.name || '-'}</b></div>
+      <div class="muted">${p.material || ''} ${p.color || ''}</div>
+      <div class="muted">最後生產數量：<span id="plq-${p.id}">${p.produced_last_qty ?? 0}</span></div>
+      <div class="muted">最後生產日期：<span id="pdat-${p.id}">${p.produced_at || '-'}</span></div>
+    </div>
+  `).join('');
+
+  // 分頁列
+  const pagerHtml = productTotalItems ? `
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;">
+      <button id="product-page-first" ${productPage <= 1 ? 'disabled' : ''}>« 第一頁</button>
+      <button id="product-page-prev"  ${productPage <= 1 ? 'disabled' : ''}>‹ 上一頁</button>
+      <div class="muted" style="flex:1;text-align:center;">
+        第 ${productPage} / ${productTotalPages} 頁（共 ${productTotalItems} 筆）
+      </div>
+      <button id="product-page-next"  ${productPage >= productTotalPages ? 'disabled' : ''}>下一頁 ›</button>
+      <button id="product-page-last"  ${productPage >= productTotalPages ? 'disabled' : ''}>最後一頁 »</button>
+    </div>
+  ` : `<div class="muted">沒有符合條件的產品</div>`;
+
+  listEl.innerHTML = cardsHtml + pagerHtml;
+
+  // 綁定分頁按鈕（綁在 render 後）
+  const btnFirst = document.getElementById('product-page-first');
+  const btnPrev  = document.getElementById('product-page-prev');
+  const btnNext  = document.getElementById('product-page-next');
+  const btnLast  = document.getElementById('product-page-last');
+
+  if (btnFirst) btnFirst.onclick = () => searchProducts(1);
+  if (btnPrev)  btnPrev.onclick  = () => {
+    if (productPage > 1) searchProducts(productPage - 1);
+  };
+  if (btnNext)  btnNext.onclick  = () => {
+    if (productPage < productTotalPages) searchProducts(productPage + 1);
+  };
+  if (btnLast)  btnLast.onclick  = () => searchProducts(productTotalPages);
 }
+
 
 async function loadVendors(){
   await loginIfNeeded();
@@ -452,103 +509,6 @@ async function loadVendors(){
   });
 }
 
-
-async function saveProductPhotos(pid){
-  const keepPaths = Array.isArray(pdEditPhotoPaths) ? pdEditPhotoPaths : [];
-  const newFiles  = Array.isArray(pdNewPhotoFiles) ? pdNewPhotoFiles : [];
-
-  if (!keepPaths.length && !newFiles.length){
-    return;
-  }
-
-  const fd = new FormData();
-  if (keepPaths.length){
-    fd.append('keep_paths', JSON.stringify(keepPaths));
-  }
-  newFiles.forEach(f => fd.append('photos', f));
-
-  const res = await fetch(`${API}/products/${pid}/photos`, {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + token },
-    body: fd
-  });
-
-  const txt = await res.text().catch(()=> '');
-  let data = {};
-  try { data = txt ? JSON.parse(txt) : {}; } catch(e){}
-
-  if (!res.ok){
-    console.error('update photos failed', res.status, txt);
-    const el = document.getElementById('pe-status');
-    if (el) el.textContent = '文字已儲存，但照片更新失敗：' + (data.detail || res.status);
-    return;
-  }
-
-  pdNewPhotoFiles = [];
-}
-
-function renderEditPhotoList(){
-  const wrap = document.getElementById('pd-edit-photo-list');
-  if (!wrap) return;
-
-  wrap.innerHTML = '';
-
-  const paths = Array.isArray(pdEditPhotoPaths) ? pdEditPhotoPaths : [];
-  const files = Array.isArray(pdNewPhotoFiles) ? pdNewPhotoFiles : [];
-
-  paths.forEach((path, idx) => {
-    const box = document.createElement('div');
-    box.style.position = 'relative';
-    const img = document.createElement('img');
-    img.src = API + '/uploads/' + path;
-    img.style.maxHeight = '220px';
-    img.style.borderRadius = '12px';
-    img.style.objectFit = 'contain';
-    box.appendChild(img);
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = '刪除';
-    btn.style.position = 'absolute';
-    btn.style.right = '4px';
-    btn.style.top = '4px';
-    btn.style.padding = '2px 6px';
-    btn.onclick = () => {
-      pdEditPhotoPaths.splice(idx, 1);
-      renderEditPhotoList();
-    };
-    box.appendChild(btn);
-
-    wrap.appendChild(box);
-  });
-
-  files.forEach((file, idx) => {
-    const box = document.createElement('div');
-    box.style.position = 'relative';
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(file);
-    img.style.maxHeight = '220px';
-    img.style.borderRadius = '12px';
-    img.style.objectFit = 'contain';
-    box.appendChild(img);
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = '移除';
-    btn.style.position = 'absolute';
-    btn.style.right = '4px';
-    btn.style.top = '4px';
-    btn.style.padding = '2px 6px';
-    btn.onclick = () => {
-      pdNewPhotoFiles.splice(idx, 1);
-      renderEditPhotoList();
-    };
-    box.appendChild(btn);
-
-    wrap.appendChild(box);
-  });
-}
-
 async function openProduct(id){
   await loginIfNeeded();
 
@@ -565,28 +525,6 @@ async function openProduct(id){
 
   const unitPriceMasked = maskPrice(p.unit_price);
   const producedAt = p.produced_at ? String(p.produced_at).slice(0,10) : '-';
-
-  const allPhotoUrls = Array.isArray(p.photo_urls) && p.photo_urls.length
-    ? p.photo_urls
-    : (p.photo_url ? [p.photo_url] : []);
-
-  let photoHtml = '';
-  if (allPhotoUrls.length){
-    photoHtml = '<div class="photo-gallery">' +
-      allPhotoUrls.map(u => `<img src="${API}${u}" alt="產品照片">`).join('') +
-      '</div>';
-  }
-
-  let otherHtml = '';
-  if (p.other && String(p.other).trim()){
-    const norm = String(p.other).trim();
-    if (norm !== DEFAULT_OTHER_TEXT.trim()){
-      otherHtml = `<div style="margin-top:8px;white-space:pre-wrap;"><b>其他：</b>${escapeHtml(p.other)}</div>`;
-    }
-  }
-
-  pdEditPhotoPaths = allPhotoUrls.map(u => String(u).replace(/^\/uploads\//,''));
-  pdNewPhotoFiles = [];
 
   // [A] 先渲染 HTML
   document.getElementById('product-detail').innerHTML = `
@@ -606,17 +544,16 @@ async function openProduct(id){
       <div class="muted">最後生產日期：<span id="pd-produced-at">${producedAt}</span></div>
       <div class="muted">最後生產數量：<span id="pd-produced-last">${p.produced_last_qty ?? '-'}</span></div>
 
-      ${photoHtml}
-      ${otherHtml}
+      ${p.photo_url ? `<div style="margin-top:8px"><img src="${API}${p.photo_url}" style="max-width:100%;border-radius:8px"/></div>` : ''}
 
       <div style="margin-top:12px" class="row">
         <button id="btn-produce" data-id="${p.id}">最後生產數量</button>
-        <button id="btn-edit-product" data-id="${p.id}">編輯</button>
+        <button id="btn-edit-product" data-id="${p.id}">修改</button>
       </div>
 
-      <!-- 模具位置照片 -->
+      <!-- 模具位置照片（僅保留最後一張） -->
       <div id="mold-loc-block" style="margin-top:12px">
-        <div><b>模具位置照片</b>
+        <div><b>模具位置照片（僅保留最後一張）</b>
           <span class="muted" style="margin-left:8px">更新：${p.mold_loc_updated_at || '-'}</span>
         </div>
         <div id="pd-locphoto-wrap" style="margin-top:6px">
@@ -639,20 +576,10 @@ async function openProduct(id){
         <label>材質</label><input id="pe-material" value="${p.material||''}" />
         <label>料號</label><input id="pe-sku" value="${p.sku||''}" />
         <label>顏色或色粉</label><input id="pe-color" value="${p.color||''}" />
-        <label>成品重量(g)</label><input id="pe-dye" value="${p.dye_amount||''}" />
+        <label>成品重量(g)</label><input id="pe-dye" type="number" step="0.01" value="${p.dye_amount||''}" />
         <label>包裝方式</label><input id="pe-packaging" value="${p.packaging||''}" />
         <label>單價</label><input id="pe-price" type="number" step="0.01" value="${p.unit_price ?? ''}" />
-        <label>其他</label><textarea id="pe-other">${p.other||'' }</textarea>
-
-        <div style="margin-top:12px">
-          <b>產品照片（編輯）</b>
-          <div id="pd-edit-photo-list" class="photo-gallery"></div>
-          <div class="row" style="margin-top:8px">
-            <button id="btn-edit-photo-add" type="button">➕ 新增照片</button>
-          </div>
-          <input id="pd-edit-photo-input" type="file" accept="image/*" multiple style="display:none">
-        </div>
-
+        <label>其他</label><textarea id="pe-other">${p.other||''}</textarea>
         <div class="row">
           <button id="btn-save-product" data-id="${p.id}">儲存</button>
           <button id="btn-delete-product" data-id="${p.id}" style="background:#b00020;color:#fff">刪除</button>
@@ -661,20 +588,6 @@ async function openProduct(id){
       </div>
     </div>`;
 
-  const editPhotoAddBtn = document.getElementById('btn-edit-photo-add');
-  const editPhotoInput  = document.getElementById('pd-edit-photo-input');
-  if (editPhotoAddBtn && editPhotoInput){
-    editPhotoAddBtn.onclick = () => editPhotoInput.click();
-    editPhotoInput.onchange = () => {
-      const files = Array.from(editPhotoInput.files || []);
-      if (files.length){
-        pdNewPhotoFiles = (pdNewPhotoFiles || []).concat(files);
-        editPhotoInput.value = '';
-        renderEditPhotoList();
-      }
-    };
-  }
-  renderEditPhotoList();
 
   // 1) 單價遮罩點擊顯示
   const priceSpan = document.getElementById('pd-price');
@@ -691,7 +604,7 @@ async function openProduct(id){
   const produceBtn = document.getElementById('btn-produce');
   produceBtn.onclick = async (e) => {
     const pid = e.target.getAttribute('data-id');
-    const qtyStr = prompt('請輸入此次生產數量：'); 
+    const qtyStr = prompt('請輸入此次生產數量（正整數）：'); 
     if (!qtyStr) return;
 
     const qty = parseInt(qtyStr, 10);
@@ -705,6 +618,9 @@ async function openProduct(id){
 
     const data = await r.json();
     if (!r.ok) { alert('登記失敗：' + (data.detail || r.status)); return; }
+    
+
+
 
     // 詳情頁更新
     document.getElementById('pd-produced').textContent      = data.produced_qty;
@@ -735,20 +651,13 @@ async function openProduct(id){
       other: $('pe-other').value
     };
     const r = await fetch(API + '/products/' + pid, {
-      method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
     });
     const j = await r.json().catch(()=> ({}));
     if (!r.ok) { $('pe-status').textContent = '儲存失敗：' + (j.detail || r.status); return; }
     $('pe-status').textContent = '已儲存';
-
-    try {
-      await saveProductPhotos(pid);
-    } catch(err) {
-      console.error('saveProductPhotos error', err);
-    }
-
     openProduct(pid);
   };
 
@@ -770,7 +679,7 @@ async function openProduct(id){
 
   alert('已刪除產品');
   switchTab('products');
-  searchProducts();
+  searchProducts(productPage);
 };
 
   // 4) 顯示詳情頁
@@ -957,26 +866,9 @@ function appendIf(fd, id, field){
 function clearIf(id){
   const el = $(id);
   if (!el) return;
-
-  if (el.type === 'file') {
-    el.value = '';
-  } else if (el.tagName === 'SELECT') {
-    el.value = '';
-  } else {
-    if (id === 'np-other') {
-      el.value = DEFAULT_OTHER_TEXT;
-    } else {
-      el.value = '';
-    }
-  }
-
-  if (id === 'np-photo-camera' || id === 'np-photo-gallery'){
-    selectedPhotoFiles = [];
-    const wrap = $('np-photo-preview');
-    const textEl = $('np-photo-name');
-    if (wrap) wrap.innerHTML = '';
-    if (textEl) textEl.textContent = '';
-  }
+  if (el.type === 'file') el.value = '';
+  else if (el.tagName === 'SELECT') el.value = '';
+  else el.value = '';
 }
 
 async function createProduct(){
@@ -986,74 +878,86 @@ async function createProduct(){
   const productNo = $('np-productno')?.value.trim() || '';
   const vendorId = $('np-vendor')?.value || '';
 
-  if (!name){
-    $('np-status').textContent = '請填「產品名稱」。';
-    return;
-  }
+  if (!name){ $('np-status').textContent = '請填「產品名稱」。'; return; }
+  
 
+  // 組 FormData（都採用安全 append）
   const fd = new FormData();
   fd.append('name', name);
   fd.append('product_no', productNo);
-  fd.append('vendor_id', vendorId);
+  fd.append('vendor_id', vendorId);              // 可空字串，後端會視為 None
+  fd.append('material', $('np-material').value);
+  fd.append('sku', $('np-sku').value);
+  fd.append('color', $('np-color').value);
+  fd.append('dye_amount', $('np-dye').value);
+  fd.append('packaging', $('np-packaging').value);
+  fd.append('unit_price', $('np-price').value || '');
 
-  appendIf(fd, 'np-material',  'material');
-  appendIf(fd, 'np-sku',       'sku');
-  appendIf(fd, 'np-color',     'color');
-  appendIf(fd, 'np-dye',       'dye_amount');
-  appendIf(fd, 'np-packaging', 'packaging');
-  appendIf(fd, 'np-price',     'unit_price');
-
-  const otherEl = $('np-other');
-  if (otherEl){
-    const raw = otherEl.value || '';
-    const norm = raw.trim();
-    if (norm && norm !== DEFAULT_OTHER_TEXT.trim()){
-      fd.append('other', raw);
+  // 「其他」欄位：跟預設 4 行一樣就當作空值
+  let otherVal = $('np-other').value;
+  if (otherVal) {
+    const t1 = otherVal.replace(/\r\n/g, '\n').trim();
+    const t2 = OTHER_TEMPLATE.replace(/\r\n/g, '\n').trim();
+    if (!t1 || t1 === t2) {
+      otherVal = '';
     }
   }
+  fd.append('other', otherVal || '');
 
-  let files = [];
-  if (selectedPhotoFiles && selectedPhotoFiles.length){
-    files = selectedPhotoFiles;
-  } else {
-    const camFiles = $('np-photo-camera')?.files ? Array.from($('np-photo-camera').files) : [];
-    const galFiles = $('np-photo-gallery')?.files ? Array.from($('np-photo-gallery').files) : [];
-    files = camFiles.concat(galFiles);
+  // 多張照片：優先用 selectedPhotos，沒有才用 input 的單張
+  let files = selectedPhotos.slice();
+  if (!files.length){
+    const cam = $('np-photo-camera').files[0];
+    const gal = $('np-photo-gallery').files[0];
+    if (cam) files.push(cam);
+    else if (gal) files.push(gal);
   }
-  files.forEach(f => fd.append('photos', f));
-
-  let respText = '';
-  try{
-    const res = await fetch(API + '/products', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-      body: fd
-    });
-    respText = await res.text();
-    let data; try{ data = JSON.parse(respText); } catch{ data = { detail: respText }; }
-
-    if (!res.ok){
-      $('np-status').textContent = '新增失敗：' + toMsg(data.detail ?? data);
-      return;
-    }
-
-    $('np-status').textContent = '新增成功！條碼：' + (data.mold_barcode || '-');
-
-    [
-      'np-name','np-productno','np-vendor','np-material','np-sku','np-color','np-dye',
-      'np-packaging','np-price','np-other','np-photo-camera','np-photo-gallery','np-photo-name'
-    ].forEach(clearIf);
-
-    selectedPhotoFiles = [];
-    const preview = $('np-photo-preview');
-    if (preview) preview.innerHTML = '';
-
-    try { await searchProducts(); } catch(e){}
-  }catch(err){
-    $('np-status').textContent =
-      '新增失敗（網路/程式）：' + (err?.message || '') + (respText ? '｜'+respText : '');
+  for (const f of files){
+    fd.append('photo', f);   // **注意：用同一個 key 'photo' 多次**
   }
+
+  const res = await fetch(API+'/products', {
+    method: 'POST',
+    headers: { 'Authorization':'Bearer '+token },
+    body: fd
+  });
+
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = {detail:text}; }
+
+  const toMsg = (d)=>{
+    if(Array.isArray(d))
+      return d.map(x=> (x.loc||[]).join('.')+': '+(x.msg||x.detail||'錯誤')).join('；');
+    if(typeof d==='object') return d.detail||JSON.stringify(d);
+    return String(d);
+  };
+
+  if(!res.ok){
+    $('np-status').textContent = '新增失敗：' + toMsg(data.detail ?? data);
+    return;
+  }
+
+  $('np-status').textContent = '新增成功！條碼：' + (data.mold_barcode || '-');
+
+  // 清空欄位
+  $('np-name').value = '';
+  $('np-productno').value = '';
+  $('np-vendor').value = '';
+  $('np-material').value = '';
+  $('np-sku').value = '';
+  $('np-color').value = '';
+  $('np-dye').value = '';
+  $('np-packaging').value = '';
+  $('np-price').value = '';
+  $('np-other').value = OTHER_TEMPLATE;   // 重設成預設 4 行
+  $('np-photo-camera').value = '';
+  $('np-photo-gallery').value = '';
+  $('np-photo-name').textContent = '';
+  selectedPhotos = [];
+  updatePhotoPreview();
 }
+
 // 新增廠商：成功後重新載入下拉，並確保最後寫入者勝出
 function $(id){ return document.getElementById(id) || null; }
 function setTextIf(id, text){ const el=$(id); if(el) el.textContent=text; }
