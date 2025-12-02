@@ -29,6 +29,13 @@
     .photo-thumb {width: 72px;  height: 72px; object-fit: cover; border-radius: 8px; margin: 4px; }
     .photo-thumb-wrap {display: inline-block; position: relative; }
     .photo-thumb-wrap button {position: absolute; top: 0; right: 0; border: none; background: rgba(0,0,0,0.6); color: #fff; border-radius: 999px; padding: 0 4px; font-size: 12px; }
+    .pg-btn {padding: 6px 10px; font-size: 14px; background: #f4f4f4; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+    .pg-btn:disabled {opacity: .5; cursor: default; }
+    .pg-btn.active {background: #333; color: white; border-color: #333; }
+    .pagination-bar {display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; width: 100%; }
+    .pagination-bar .pg-btn {width: auto !important; flex: 0 0 auto; display: inline-flex; justify-content: center; align-items: center; padding: 6px 10px; font-size: 14px; background: #f4f4f4; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; }
+    .pagination-bar .pg-btn:disabled {opacity: .5; cursor: default;}
+    .pagination-bar .pg-btn.active {background: #333; color: white; border-color: #333; }
   </style>
 </head>
 <body>
@@ -130,7 +137,7 @@ let token=''; const API = location.origin;
 let selectedPhotos = [];
 let _productsReqSeq = 0;
 let productPage = 1;            // 目前頁碼
-const PRODUCT_PAGE_SIZE = 10;   // 每頁幾筆（對應後端 size）
+const PRODUCT_PAGE_SIZE = 15;   // 每頁幾筆（對應後端 size）
 let productTotalPages = 1;      // 總頁數
 let productTotalItems = 0;      // 總筆數
 
@@ -450,19 +457,76 @@ async function searchProducts(page){
   `).join('');
 
   // 分頁列
-  const pagerHtml = productTotalItems ? `
-    <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;">
-      <button id="product-page-first" ${productPage <= 1 ? 'disabled' : ''}>« 第一頁</button>
-      <button id="product-page-prev"  ${productPage <= 1 ? 'disabled' : ''}>‹ 上一頁</button>
-      <div class="muted" style="flex:1;text-align:center;">
-        第 ${productPage} / ${productTotalPages} 頁（共 ${productTotalItems} 筆）
-      </div>
-      <button id="product-page-next"  ${productPage >= productTotalPages ? 'disabled' : ''}>下一頁 ›</button>
-      <button id="product-page-last"  ${productPage >= productTotalPages ? 'disabled' : ''}>最後一頁 »</button>
-    </div>
-  ` : `<div class="muted">沒有符合條件的產品</div>`;
+const pagerHtml = productTotalItems ? `
+  <div class="card" style="margin-top:12px; padding:12px; display:flex; flex-direction:column; gap:10px; align-items:center;">
+
+    <!-- 頁碼摘要 -->
+    <div class="muted" style="text-align:center;font-size:15px;">第 ${productPage} / ${productTotalPages} 頁（共 ${productTotalItems} 筆）</div>
+
+    <!-- 動態頁碼列 -->
+    <div id="product-pagination" class="pagination-bar"></div>
+
+  </div>
+` : `<div class="muted">沒有符合條件的產品</div>`;
+
+
+
 
   listEl.innerHTML = cardsHtml + pagerHtml;
+
+  // 動態產生頁碼按鈕
+const pagEl = document.getElementById('product-pagination');
+
+if (pagEl) {
+  let html = "";
+
+  // << 上一頁
+  html += `<button class="pg-btn" data-page="${productPage - 1}"${productPage <= 1 ? 'disabled' : ''}>&laquo;</button>`;
+
+  const maxPageButtons = 5;   // 中間最多顯示 5 個頁碼
+
+  let start = Math.max(1, productPage - 2);
+  let end   = Math.min(productTotalPages, start + maxPageButtons - 1);
+
+  // 若結尾不夠 5 格，向左補
+  start = Math.max(1, end - maxPageButtons + 1);
+
+  // 頭部省略號
+  if (start > 1) {
+    html += `<button class="pg-btn" data-page="1">1</button>`;
+    html += `<span class="muted">...</span>`;
+  }
+
+  // 中間主頁碼
+  for (let p = start; p <= end; p++) {
+    if (p === productPage) {
+      html += `<button class="pg-btn active" data-page="${p}"disabled style="font-weight:bold;">${p}</button>`;
+    } else {
+      html += `<button class="pg-btn" data-page="${p}">${p}</button>`;
+    }
+  }
+
+  // 尾部省略號
+  if (end < productTotalPages) {
+    html += `<span class="muted">...</span>`;
+    html += `<button class="pg-btn" data-page="${productTotalPages}">${productTotalPages}</button>`;}
+
+  // >> 下一頁
+  html += `<button class="pg-btn" data-page="${productPage + 1}"${productPage >= productTotalPages ? 'disabled' : ''}>&raquo;</button>`;
+
+  pagEl.innerHTML = html;
+
+  // 綁定事件
+  pagEl.querySelectorAll(".pg-btn").forEach(btn => {
+    btn.onclick = () => {
+      const p = parseInt(btn.dataset.page);
+      if (!isNaN(p) && p >= 1 && p <= productTotalPages) {
+        searchProducts(p);
+      }
+    };
+  });
+}
+
 
   // 綁定分頁按鈕（綁在 render 後）
   const btnFirst = document.getElementById('product-page-first');
