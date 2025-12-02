@@ -86,9 +86,8 @@
       <div id="np-photo-name" class="muted"></div>
       <div id="np-photo-preview" class="muted"></div>
       <label>產品名稱</label><input id="np-name" />
-      <label>產品編號</label><input id="np-productno" />
       <label>廠商名稱</label><select id="np-vendor"><option value=""></option></select>
-      <label>材質</label><input id="np-material" />
+      <label>材質</label><select id="np-material"></select>
       <label>料號</label><input id="np-sku" />
       <label>顏色或色粉</label><input id="np-color" />
       <label>成品重量(g)</label><input id="np-dye" />
@@ -186,6 +185,14 @@ window.updateListItemFromProduce = function(id, payload){
   if (elDate) elDate.textContent = date;
 };
 
+window.addEventListener('DOMContentLoaded', () => {
+  const npMat = document.getElementById('np-material');
+  if (npMat) {
+    npMat.innerHTML = materialOptionsHtml("");  // 新增時沒有預設值
+  }
+  // 其他初始化...
+});
+
 
 function updatePhotoPreview(){
   const wrap = $('np-photo-preview');
@@ -250,6 +257,41 @@ function updateListItemFromProduce(id, payload){
   if (elQty)  elQty.textContent  = qty;
   if (elDate) elDate.textContent = date;
 }
+
+//材質列表
+const MATERIAL_OPTIONS = [
+  "",       // 代表「未選擇」
+  "ABS",
+  "PP",
+  "PVC",
+  "HDPE",
+  "LDPE",
+  "PA6",
+  "PA6 GF10%",
+  "PA6 GF15%",
+  "PA6 GF20%",
+  "PA6 GF30%",
+  "PA66",
+  "POM",
+  "PC",
+  "PBT",
+  "TPR",
+  "TPU",
+  "TPE",
+  "其他",
+];
+
+function materialOptionsHtml(selectedValue) {
+  const safeSelected = selectedValue || "";
+  return MATERIAL_OPTIONS.map(val => {
+    if (val === "") {
+      return `<option value="">（請選擇材質）</option>`;
+    }
+    const sel = (val === safeSelected) ? ' selected' : '';
+    return `<option value="${val}"${sel}>${val}</option>`;
+  }).join('');
+}
+
 
 /* ===== 廠商地區解析 + 排序工具（請放在 <script> 最上面） ===== */
 
@@ -594,7 +636,6 @@ async function openProduct(id){
   document.getElementById('product-detail').innerHTML = `
     <div class="card">
       <h3>${p.name||'-'}</h3>
-      <div>產品編號：${p.product_no||'-'}</div>
       <div>廠商：${p.vendor_name||'-'}</div>
       <div>材質：${p.material||'-'}</div>
       <div>料號：${p.sku||'-'}</div>
@@ -636,8 +677,7 @@ async function openProduct(id){
 
       <div id="pd-edit" class="hide" style="margin-top:12px">
         <label>產品名稱</label><input id="pe-name" value="${p.name||''}" />
-        <label>產品編號</label><input id="pe-productno" value="${p.product_no||''}" />
-        <label>材質</label><input id="pe-material" value="${p.material||''}" />
+        <label>材質</label><select id="pe-material">${materialOptionsHtml(p.material)}</select>
         <label>料號</label><input id="pe-sku" value="${p.sku||''}" />
         <label>顏色或色粉</label><input id="pe-color" value="${p.color||''}" />
         <label>成品重量(g)</label><input id="pe-dye" type="number" step="0.01" value="${p.dye_amount||''}" />
@@ -704,7 +744,6 @@ async function openProduct(id){
     const mlocEl = document.getElementById('pe-mloc'); // 你的詳情頁目前沒有這格，防呆
     const payload = {
       name: $('pe-name').value,
-      product_no: $('pe-productno').value,
       material: $('pe-material').value,
       sku: $('pe-sku').value,
       color: $('pe-color').value,
@@ -939,7 +978,6 @@ async function createProduct(){
   await loginIfNeeded();
 
   const name = $('np-name')?.value.trim() || '';
-  const productNo = $('np-productno')?.value.trim() || '';
   const vendorId = $('np-vendor')?.value || '';
 
   if (!name){ $('np-status').textContent = '請填「產品名稱」。'; return; }
@@ -948,7 +986,6 @@ async function createProduct(){
   // 組 FormData（都採用安全 append）
   const fd = new FormData();
   fd.append('name', name);
-  fd.append('product_no', productNo);
   fd.append('vendor_id', vendorId);              // 可空字串，後端會視為 None
   fd.append('material', $('np-material').value);
   fd.append('sku', $('np-sku').value);
@@ -1006,7 +1043,6 @@ async function createProduct(){
 
   // 清空欄位
   $('np-name').value = '';
-  $('np-productno').value = '';
   $('np-vendor').value = '';
   $('np-material').value = '';
   $('np-sku').value = '';

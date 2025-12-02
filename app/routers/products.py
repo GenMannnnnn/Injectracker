@@ -263,15 +263,14 @@ def get_product_detail(pid: int, db: Session, user: User) -> ProductDetailOut:
 @router.post("", response_model=ProductDetailOut)
 async def create_product(
     name: str = Form(...),
-    product_no: str = Form(...),
-    vendor_id: Optional[str] = Form(None),  # 前端可能給 ""，先用字串接收
+    product_no: str = Form(None),
+    vendor_id: Optional[str] = Form(None),
     material: Optional[str] = Form(None),
     sku: Optional[str] = Form(None),
     color: Optional[str] = Form(None),
     dye_amount: Optional[str] = Form(None),
     packaging: Optional[str] = Form(None),
-    unit_price: Optional[float] = Form(None),
-    mold_location: Optional[str] = Form(None),  # 你若已經不需要這個欄位，可移除
+    unit_price: Optional[str] = Form(None),
     other: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
     photos: Optional[List[UploadFile]] = File(None),
@@ -318,17 +317,33 @@ async def create_product(
     if mold_location_photo:
         loc_bytes = await mold_location_photo.read() # ← 用 await 讀 bytes
         loc_photo_path = save_bytes_crop_square_reduce(loc_bytes, mold_location_photo.filename)
+        
+
+    # --- product_no 正規化：空字串當成 None ---
+    product_no_val: Optional[str] = None
+    if product_no is not None:
+        product_no_val = product_no.strip() or None
+        
+    # --- unit_price 正規化：空字串 -> None，有值才轉 float ---
+    unit_price_val: Optional[float] = None
+    if unit_price is not None:
+        text = str(unit_price).strip()
+        if text != "":
+            try:
+                unit_price_val = float(text)
+            except ValueError:
+                raise HTTPException(400, detail="單價格式不正確，請輸入數字")
     
     obj = Product(
         name=name,
-        product_no=product_no,
+        product_no=product_no_val,
         vendor_id=(vendor.id if vendor else None),
         material=material,
         sku=sku,
         color=color,
         dye_amount=dye_amount,
         packaging=packaging,
-        unit_price=unit_price,
+        unit_price=unit_price_val,
         mold_barcode=code13,
         other=other,
         photo_path=photo_path,
