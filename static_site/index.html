@@ -488,6 +488,23 @@ async function searchProducts(page){
   productPage = (typeof data.page === 'number') ? data.page : productPage;
   productTotalPages = Math.max(1, Math.ceil(productTotalItems / size));
 
+  let productSearchTimer = null;
+  document.getElementById('btn-search').onclick = () => {productPage = 1; searchProducts(1); };
+  const qInput = document.getElementById('q');
+    if (qInput) {
+  qInput.addEventListener('input', () => {
+    // 每次輸入先清掉上一個計時器
+    if (productSearchTimer) {
+      clearTimeout(productSearchTimer);
+    }
+    // 停止輸入 300ms 後才真的發 request
+    productSearchTimer = setTimeout(() => {
+      productPage = 1;       // 每次重新搜尋都回到第 1 頁
+      searchProducts(1);
+    }, 300);
+  });
+    }
+
   // 產品卡片
   const cardsHtml = items.map(p => `
     <div class="card clickable" onclick="openProduct(${p.id})" role="button" tabindex="0">
