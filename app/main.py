@@ -10,8 +10,8 @@ from .routers.vendors import router as vendors_router
 from .routers.products import router as products_router
 from .utils import UPLOAD_DIR
 
-BUILD_VERSION = "V2.3.4"
-# 修正搜尋欄
+BUILD_VERSION = "V2.3.8"
+# 修正照片捲動功能
 
 app = FastAPI(title="ERP Mobile API")
 
