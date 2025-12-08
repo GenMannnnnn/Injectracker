@@ -75,31 +75,6 @@ def _fmt_date_tw(dt):
     return dt.strftime("%Y-%m-%d")
 
 def _detail_from_model(p: Product, user) -> ProductDetailOut:
-    return ProductDetailOut(
-        id=p.id,
-        name=p.name,
-        product_no=p.product_no,
-        vendor_name=(p.vendor.name if p.vendor else None),
-        material=p.material,
-        sku=p.sku,
-        color=p.color,
-        dye_amount=p.dye_amount,
-        packaging=p.packaging,
-        mold_barcode=p.mold_barcode,
-        mold_location=getattr(p, "mold_location", None),
-        other=p.other,
-        photo_url=(f"/uploads/{p.photo_path}" if p.photo_path else None),
-        unit_price=(p.unit_price if getattr(user, "role", None) == "admin" else None),
-        produced_qty=(p.produced_qty or 0),
-        produced_at=_fmt_date_tw(getattr(p, "produced_at", None)),
-        produced_last_qty=getattr(p, "produced_last_qty", None),
-        # 若你有這兩個欄位：
-        mold_loc_photo_url=(f"/uploads/{p.mold_loc_photo}" if getattr(p, "mold_loc_photo", None) else None),
-        mold_loc_updated_at=(_fmt_date_tw(getattr(p, "mold_loc_updated_at", None))),
-    )
-
-
-def _detail_from_model(p: Product, user) -> ProductDetailOut:
     photo_urls = _get_photo_urls(p)
     return ProductDetailOut(
         id=p.id,
@@ -308,8 +283,10 @@ async def create_product(
         path = save_bytes_crop_square_reduce(raw, photo.filename)
         photo_paths.append(path)
 
+# ✅ 第一張 → photo_path，其餘 → extra_photo_paths
     photo_path = photo_paths[0] if photo_paths else None
-    extra_photo_paths = json.dumps(photo_paths) if photo_paths else None
+    extra_photo_paths = json.dumps(photo_paths[1:]) if len(photo_paths) > 1 else None
+
 
     # --- 模具位置照片：只保留最後一張 ---
     loc_photo_path = None
@@ -511,7 +488,7 @@ async def update_product_photos(
 
     # 6. 更新 DB 欄位
     p.photo_path = photo_paths[0] if photo_paths else None
-    p.extra_photo_paths = json.dumps(photo_paths) if photo_paths else None
+    p.extra_photo_paths = json.dumps(photo_paths[1:]) if len(photo_paths) > 1 else None
 
     db.commit()
     db.refresh(p)
