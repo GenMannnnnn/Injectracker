@@ -236,21 +236,22 @@ function updatePhotoPreview(){
 }
 
 function handlePhotoChange(input){
-  if(!(input.files && input.files.length)) return;
+  if (!(input.files && input.files.length)) return;
   const files = Array.from(input.files);
 
+  // 不管是相機還是相簿，一律「把這次選到的檔案往後加」
+  selectedPhotos = selectedPhotos.concat(files);
+
+  // 清空另一個 input，避免混亂
   if (input.id === 'np-photo-camera') {
-    // 拍照通常只有一張，就加第一張
-    selectedPhotos.push(files[0]);
     $('np-photo-gallery').value = '';
-  } else {
-    // 相簿可以一次選多張
-    selectedPhotos = selectedPhotos.concat(files);
+  } else if (input.id === 'np-photo-gallery') {
     $('np-photo-camera').value = '';
   }
 
   updatePhotoPreview();
 }
+
 
 function updateListItemFromProduce(id, payload){
   const qty  = (payload?.produced_last_qty ?? payload?.qty ?? 0);
